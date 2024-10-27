@@ -1,0 +1,1039 @@
+---
+title: "EDA Final"
+author: "Harshith Doppalapudi"
+date: "2024-04-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(viridis)
+library(lubridate)
+scale_fill_viridis(discrete = FALSE)
+scale_color_viridis(discrete = FALSE)
+
+cb_palette = c("#999999", "#E69F00", "#56B4E9", "#009E73",
+               "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+
+
+
+```{r}
+# Read in the data
+df <- read.delim('911_Calls_for_Service.csv', header = TRUE, stringsAsFactors = FALSE)
+
+# Preliminary data transformation
+df <- df %>%
+  select(recordId, callKey, callDateTime, priority, description, PoliceDistrict) %>%
+  mutate(
+    callDateTime = as.POSIXct(callDateTime, format = "%Y/%m/%d %H:%M:%S+00", tz = "UTC"),
+    calldate = as.Date(callDateTime),
+    calltime = format(callDateTime, format = "%H:%M:%S"),
+    month=month(callDateTime),
+    day_of_week = wday(calldate, label = TRUE)
+  )
+
+# Filter data for the year 2021
+calls_2021 <- df %>% filter(year(calldate) == 2021)
+```
+
+
+```{r}
+calls_2021 <- calls_2021 %>%
+  filter(!is.na(priority) & priority != "")
+
+```
+
+
+```{r}
+calls_2021<-calls_2021%>%
+  mutate(priority = ifelse(priority == "Non-Emergency", "Low", priority))%>%
+  mutate(priority = ifelse(priority == "Out of Service", "Low", priority))%>%
+  mutate(priority = ifelse(priority == "Emergency", "High", priority))
+```
+
+
+```{r}
+library(dplyr)
+
+calls_2021 <- calls_2021 %>%
+  mutate(
+    DateHour = format(callDateTime, "%Y-%m-%d %H:00:00"),   
+    Day = wday(callDateTime, label = TRUE, abbr = FALSE)  
+  )
+
+# Now aggregate the data to count calls per DateHour
+hourly_calls <- calls_2021 %>%
+  group_by(DateHour, Day,priority) %>%
+  summarize(TotalCalls = n(), .groups = 'drop')
+
+
+
+```
+
+
+```{r}
+
+library(dplyr)
+
+hourly_calls <- hourly_calls %>%
+  mutate(
+    Date = as.Date(DateHour),
+    Hour = as.integer(substr(DateHour, 12, 13))  
+  ) %>%
+  select(-DateHour) 
+
+```
+
+```{r}
+hourly_calls$Month<-month(hourly_calls$Date,label=TRUE, abbr=FALSE)
+view(hourly_calls)
+```
+
+```{r}
+# Calculating the average number of calls per hour across all days
+avg_calls_by_hour <- hourly_calls %>%
+  group_by(Hour) %>%
+  summarize(AverageCalls = mean(TotalCalls))
+
+# Plotting
+ggplot(avg_calls_by_hour, aes(x = Hour, y = AverageCalls)) +
+  geom_line() +
+  labs(title = "Average Number of Calls by Hour of the Day", x = "Hour of Day", y = "Average Calls") +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Calculating the average number of calls per day of the week
+avg_calls_by_day <- hourly_calls %>%
+  group_by(Day) %>%
+  summarize(AverageCalls = mean(TotalCalls))
+
+# Plotting
+ggplot(avg_calls_by_day, aes(x = Day, y = AverageCalls)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average Number of Calls by Day of the Week", x = "Day of the Week", y = "Average Calls") +
+  theme_minimal()
+
+```
+
+```{r}
+# Calculating the average number of calls per month
+avg_calls_by_month <- hourly_calls %>%
+  group_by(Month) %>%
+  summarize(AverageCalls = mean(TotalCalls))
+
+# Plotting
+ggplot(avg_calls_by_month, aes(x = Month, y = AverageCalls, group = 1)) +
+  geom_line() +
+  labs(title = "Average Number of Calls by Month", x = "Month", y = "Average Calls") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  theme_minimal()
+
+```
+```{r}
+library(dplyr)
+
+hourly_calls$Hour <- as.numeric(as.character(hourly_calls$Hour))
+
+calls_grouped_by_dow_hour <- hourly_calls %>%
+  group_by(Day, Hour) %>%
+  summarize(avg_calls = mean(TotalCalls)) %>%
+  ungroup() 
+```
+```{r}
+library(ggplot2)
+calls_grouped_by_dow_hour$Day <- factor(calls_grouped_by_dow_hour$Day, 
+                                        levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+
+ggplot(calls_grouped_by_dow_hour, aes(x = Hour, y = avg_calls,color=avg_calls)) +
+  geom_line(color = "steelblue") +
+  geom_point() +
+  facet_wrap(~Day, ncol = 3) +
+  labs(x = "Hour of the Day", y = "Average Calls", title = "Variation in Average Calls by Hour and Day of Week") +
+  theme_minimal()
+
+```
+
+```{r}
+library(dplyr)
+
+hourly_calls$Month <- factor(hourly_calls$Month, 
+                             levels = c("January", "February", "March", "April", "May", "June", 
+                                        "July", "August", "September", "October", "November", "December"))
+
+# Group by Month and Hour, then calculate average calls
+calls_grouped_by_month_hour <- hourly_calls %>%
+  group_by(Month, Hour) %>%
+  summarize(avg_calls = mean(TotalCalls)) %>%
+  ungroup()  # Ungroup after summarizing
+
+```
+
+
+```{r}
+library(ggplot2)
+
+# Plot the data with faceting by Month
+ggplot(calls_grouped_by_month_hour, aes(x = Hour, y = avg_calls,color=avg_calls)) +
+  geom_line(color = "steelblue") +
+  geom_point() +
+  facet_wrap(~Month, ncol = 4) +  # 4 columns for 3 rows to display all months
+  labs(x = "Hour of the Day", y = "Average Calls", title = "Variation in Average Calls by Hour and Month") +
+  theme_minimal()
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+
+hourly_summary <- hourly_calls %>%
+  group_by(Month, Day, Hour) %>%
+  summarize(AvgTotalCalls = mean(TotalCalls), .groups = 'drop')
+
+# Create the plot
+ggplot(hourly_summary, aes(x = Hour, y = log(AvgTotalCalls), group = Day, color = Day)) +
+  geom_point() +
+  geom_smooth(method="gam",se=FALSE)+
+  facet_wrap(~Month, ncol = 3) + # Adjust ncol if you want a different layout
+  scale_color_viridis_d() +
+  labs(title = "Average Total Calls by Hour and Day for Each Month",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+  theme(legend.position = "bottom") # Place the legend at the bottom
+
+```
+
+
+```{r}
+hourly_calls <- hourly_calls %>%
+  mutate(log_TotalCalls = log(TotalCalls + 1))
+
+calls_grouped_by_dow_hour <- hourly_calls %>%
+  group_by(Day, Hour) %>%
+  summarize(
+    avg_calls = mean(TotalCalls), 
+    log_avg_calls = mean(log_TotalCalls)
+  ) %>%
+  ungroup() 
+
+```
+```{r}
+ggplot(calls_grouped_by_dow_hour, aes(x = Hour, y = log(avg_calls),color=log_avg_calls))+
+  geom_line(color = "steelblue") +
+  geom_point() +
+  facet_wrap(~Day, ncol = 3) +
+  labs(x = "Hour of the Day", y = "Log of Average Calls", title = "Variation in Log of Average Calls by Hour and Day of Week") +
+  theme_minimal()
+```
+
+
+
+```{r}
+calls_grouped_by_month_hour <- hourly_calls %>%
+  group_by(Month, Hour) %>%
+  summarize(
+    avg_calls = mean(TotalCalls),
+    log_avg_calls = mean(log_TotalCalls) 
+  ) %>%
+  ungroup()
+```
+```{r}
+ggplot(calls_grouped_by_month_hour, aes(x = Hour, y = log_avg_calls,color=log_avg_calls)) +
+  geom_line(color = "steelblue") +
+  geom_point() +
+  facet_wrap(~Month, ncol = 3) +
+  labs(x = "Hour of the Day", y = "Log of Average Calls", title = "Log of Average Calls by Hour and Month") +
+  theme_minimal()
+
+```
+```{r}
+total_calls_by_priority <- hourly_calls %>%
+  group_by(priority) %>%
+  summarize(TotalCalls = sum(TotalCalls)) %>%
+  ungroup()
+
+```
+
+
+```{r}
+library(ggplot2)
+
+ggplot(total_calls_by_priority, aes(x = priority, y = TotalCalls, fill = priority)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Calls by Priority", x = "Priority", y = "Total Calls") +
+  theme_minimal() +
+  scale_fill_viridis_d(begin = 0.3, end = 0.7, direction = 1, option = "D") # Using viridis color palette
+
+```
+
+```{r}
+calls_by_priority_and_hour <- hourly_calls %>%
+  group_by(priority, Hour) %>%
+  summarize(TotalCalls = sum(TotalCalls), .groups = 'drop')
+
+ggplot(calls_by_priority_and_hour, aes(x = Hour, y = TotalCalls, fill = priority)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Call Volume by Hour and Priority", x = "Hour of the Day", y = "Total Calls") +
+  theme_minimal() +
+  scale_fill_viridis_d()
+
+```
+
+```{r}
+calls_by_priority_and_day <- hourly_calls %>%
+  group_by(priority, Day) %>%
+  summarize(TotalCalls = sum(TotalCalls), .groups = 'drop')
+
+ggplot(calls_by_priority_and_day, aes(x = Day, y = TotalCalls, fill = priority)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Call Volume by Day of Week and Priority", x = "Day of the Week", y = "Total Calls") +
+  theme_minimal() +
+  scale_fill_viridis_d()
+
+```
+
+```{r}
+calls_by_priority_and_month <- hourly_calls %>%
+  group_by(priority, Month) %>%
+  summarize(TotalCalls = sum(TotalCalls), .groups = 'drop')
+
+```
+
+```{r}
+ggplot(calls_by_priority_and_month, aes(x = Month, y = TotalCalls, fill = priority)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Call Volume by Month and Priority", x = "Month", y = "Total Calls") +
+  theme_minimal() +
+  scale_fill_viridis_d() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+
+```
+
+
+```{r}
+calls_grouped_by_priority_dow_hour <- hourly_calls %>%
+  group_by(priority, Day, Hour) %>%
+  summarize(avg_calls = mean(TotalCalls), .groups = 'drop')
+
+```
+
+```{r}
+ggplot(calls_grouped_by_priority_dow_hour, aes(x = Hour, y = avg_calls, color = Day)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~priority, scales = "free_y") +
+  labs(title = "Average Calls by Hour, Day, and Priority",
+       x = "Hour of the Day", y = "Average Calls") +
+  theme_minimal() +
+  scale_color_viridis_d()
+
+```
+```{r}
+ggplot(calls_grouped_by_priority_dow_hour, aes(x = Hour, y = log(avg_calls), color = Day)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~priority, scales = "free_y") +
+  labs(title = "Average Calls by Hour, Day, and Priority",
+       x = "Hour of the Day", y = "Log Average Calls") +
+  theme_minimal() +
+  scale_color_viridis_d()
+
+```
+
+
+```{r}
+avg_calls_by_priority_month_hour <- hourly_calls %>%
+  group_by(priority, Month, Hour) %>%
+  summarize(avg_calls = mean(TotalCalls), .groups = 'drop') # Calculate average calls
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(avg_calls_by_priority_month_hour, aes(x = Hour, y = avg_calls, color = priority)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~Month, scales = "free_y", nrow = 3) + 
+  labs(title = "Average Calls by Hour, Month, and Priority",
+       x = "Hour of Day",
+       y = "Average Calls") +
+  theme_minimal() +
+  scale_color_viridis_d()
+
+
+```
+
+```{r}
+ggplot(avg_calls_by_priority_month_hour, aes(x = Hour, y = log(avg_calls), color = priority)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~Month, scales = "free_y", nrow = 3) + 
+  labs(title = "Log Average Calls by Hour, Month, and Priority",
+       x = "Hour of Day",
+       y = "Log Average Calls") +
+  theme_minimal() +
+  scale_color_viridis_d()
+```
+
+```{r}
+str(hourly_calls)
+```
+
+##Modeling
+
+let's start with a Linear model with Month, Day and Hour as predictors for TotalCalls.
+
+##Linear Model
+
+We can initially try with a simple model without any transformations and interactions between the predictors.
+```{r}
+linear_model0 <- lm(TotalCalls ~ factor(Month) + factor(Day) + factor(Hour), data = hourly_calls)
+summary(linear_model0)
+```
+```{r}
+library(broom)
+model.df <- augment(linear_model0)
+
+ggplot(model.df,aes(x=.fitted,y=.resid))+
+  geom_point()+geom_smooth(color = "#E69F00")+
+  geom_abline(slope = 0,intercept = 0)+
+    labs(title = "Residuals vs Fitted Values for linear Model",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+```{r}
+var(model.df$.fitted) / (var(model.df$.resid) + var(model.df$.fitted))
+```
+```{r}
+AIC(linear_model0)
+BIC(linear_model0)
+```
+
+Now let's try linear model, with log transformation of the TotalCalls
+
+```{r}
+linear_model1 <- lm(log_TotalCalls ~ factor(Month) + factor(Day) + factor(Hour), data = hourly_calls)
+summary(linear_model1)
+```
+
+
+```{r}
+model.df <- augment(linear_model1)
+
+ggplot(model.df,aes(x=.fitted,y=.resid))+
+  geom_point()+geom_smooth(color = "#E69F00")+
+  geom_abline(slope = 0,intercept = 0)+
+    labs(title = "Residuals vs Fitted Values for linear Model",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+
+
+```{r}
+var(model.df$.fitted) / (var(model.df$.resid) + var(model.df$.fitted))
+```
+```{r}
+AIC(linear_model1)
+BIC(linear_model1)
+
+```
+
+Trying with interactions between the predictors
+
+```{r}
+linear_model2 <- lm(log_TotalCalls ~ factor(Month) + factor(Day) + factor(Hour) + factor(Month)*factor(Day)*factor(Hour), data = hourly_calls)
+summary(linear_model2)
+```
+
+```{r}
+model.df <- augment(linear_model2)
+
+ggplot(model.df,aes(x=.fitted,y=.resid))+
+  geom_point()+geom_smooth(color = "#E69F00")+
+  geom_abline(slope = 0,intercept = 0)+
+    labs(title = "Residuals vs Fitted Values for linear Model",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+```{r}
+var(model.df$.fitted) / (var(model.df$.resid) + var(model.df$.fitted))
+```
+```{r}
+AIC(linear_model2)
+BIC(linear_model2)
+```
+
+```{r}
+linear_model3 <- lm(TotalCalls ~ factor(Month) + factor(Day) + factor(Hour) + factor(Month)*factor(Day)*factor(Hour), data = hourly_calls)
+summary(linear_model3)
+```
+
+```{r}
+model.df <- augment(linear_model3)
+
+ggplot(model.df,aes(x=.fitted,y=.resid))+
+  geom_point()+geom_smooth(color = "#E69F00")+
+  geom_abline(slope = 0,intercept = 0)+
+    labs(title = "Residuals vs Fitted Values for linear Model",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+
+```{r}
+var(model.df$.fitted) / (var(model.df$.resid) + var(model.df$.fitted))
+```
+```{r}
+AIC(linear_model3)
+BIC(linear_model3)
+```
+
+Let's compare all the linear models we tried
+```{r}
+# Calculate AIC for each model
+aic_values <- AIC(linear_model0, linear_model1, linear_model2, linear_model3)
+
+# Calculate BIC for each model
+bic_values <- BIC(linear_model0, linear_model1, linear_model2, linear_model3)
+
+# Calculate R-squared for each model
+r_squared <- summary(linear_model0)$r.squared
+r_squared <- c(r_squared, summary(linear_model1)$r.squared)
+r_squared <- c(r_squared, summary(linear_model2)$r.squared)
+r_squared <- c(r_squared, summary(linear_model3)$r.squared)
+
+# Print the results
+print("AIC values:")
+print(aic_values)
+
+print("BIC values:")
+print(bic_values)
+
+print("R-squared values:")
+print(r_squared)
+```
+
+linear_model1 has lowest AIC,BIC scores while r-square is similar for all 4 models. So, let's proceed with linear_model1 and try to visualize the model predictions.
+
+Generating fake data, since all are categorical, let's use all possible values.
+```{r}
+Month <- c("January","February","March","April","May","June","July","August","September","October","November","December")
+Priority <-c("High","Low","Medium")
+Day <- c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")
+Hour <- seq(0,23,1)
+fake <- expand.grid( Month = Month, Day = Day, Hour = Hour)
+preds <- predict(linear_model1, newdata = fake)
+fake$LogTotalCalls <- as.vector(preds)
+#View(fake)
+```
+
+
+```{r}
+ggplot(fake, aes(x = Hour , y = LogTotalCalls, color = Day, group=Day)) +
+  geom_smooth(method=loess,se=FALSE) +
+   geom_point(data = hourly_calls, aes(x = Hour, y = log(TotalCalls), color = Day), alpha = 0.3, shape = 16)+
+  labs(title = "Log(Total Calls) predicted based on the Hour",
+       x = "Hour of the day",
+       y = "Total calls predicted") + theme_minimal() +
+  scale_fill_viridis_d()
+```
+Graph representing the relationship between predict log of total calls using linear_model1, over the Hour of the day. The line represents the model prediction, and they are colored by day. We can see no variability in this graph between the days.
+
+```{r}
+ggplot(fake, aes(x = Hour , y = LogTotalCalls)) +
+  geom_smooth(se=FALSE,) +
+geom_point(data = hourly_calls, aes(x = Hour, y = log(TotalCalls)),color='black', alpha = 0.03, shape = 16)+
+  labs(title = "Total Calls predicted based on the Hour faceted by Day",
+       x = "Hour of the day",
+       y = "log(Total calls) predicted") + theme_minimal() +
+  scale_fill_viridis_d() + facet_wrap(~Day)
+```
+Graph again representing predicted log of TotalCalls from the linear_model1, given hour of the day, faceted by day. The blue line represents the predicted values.
+
+```{r}
+ggplot(fake, aes(x = Hour , y = LogTotalCalls)) +
+  
+  geom_smooth(se=FALSE) +
+  geom_point() +
+  labs(title = "Total Calls predicted based on the Hour faceted per month",
+       x = "Hour of the day",
+       y = "log(Total calls) predicted") + theme_minimal() +
+  scale_fill_viridis_d() +
+  facet_wrap(~Month)
+```
+Graph again representing predicted log of TotalCalls from the linear_model1, given hour of the day, faceted by month instead. We can observe that there is slight variance in model predited lines(blues ones) for each month, representative of the data. 
+
+
+
+Checking the linear_model1 fit with original data. Since, using the entire data crowds the graphs with scatter points, making it difficult to interpret, we will use the value fop total calls average by hour.
+
+
+```{r}
+fake <- expand.grid(Month = Month, Day = Day, Hour = Hour)
+
+
+fake$Month <- factor(fake$Month, levels = Month)
+fake$Day <- factor(fake$Day, levels = Day)
+fake$Hour <- factor(fake$Hour, levels = Hour)
+
+fake$PredictedLogTotalCalls <- predict(linear_model1, newdata = fake)
+
+
+fake$PredictedTotalCalls <- exp(fake$PredictedLogTotalCalls)
+```
+
+```{r}
+# Convert Hour to a numeric value if it's stored as a factor or character
+fake$Hour <- as.numeric(as.character(fake$Hour))
+hourly_calls$Hour <- as.numeric(as.character(hourly_calls$Hour))
+
+```
+
+
+```{r}
+# Predicting values using the linear model
+hourly_summary_predicted_lm1 <- hourly_summary %>%
+  mutate(PredictedLogTotalCalls = predict(linear_model1, newdata = .))
+
+```
+
+```{r}
+# Predicting values using the linear model
+hourly_summary_predicted_lm <- fake %>%
+  mutate(PredictedTotalCalls = exp(predict(linear_model1, newdata = .)))
+
+# Calculate average of predicted calls
+avg_predicted_calls_lm <- hourly_summary_predicted_lm %>%
+  group_by(Month, Day, Hour) %>%
+  summarize(AvgPredictedTotalCalls = mean(PredictedTotalCalls), .groups = 'drop')
+```
+
+```{r}
+ggplot() +
+  geom_point(data = hourly_summary, aes(x = Hour, y = AvgTotalCalls), alpha = 0.3, shape = 16) +
+  geom_smooth(method="loess",se=FALSE, data = avg_predicted_calls_lm, aes(x = Hour, y = AvgPredictedTotalCalls, color=factor(Day))) +
+  scale_color_manual(values = cb_palette) +
+  labs(title = "Predicted vs. Original Average Total Calls by Hour and Day for Each Month (Linear Model)",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12),
+        plot.margin = margin(20,80,20,20),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10),
+          strip.text = element_text(size = 10))+
+  theme(legend.position = "bottom")
+```
+
+The Graph shows the relationship between actual and predicted average total calls per hour by the linear model. It focuses on average total calls versus the hour of the day, with black data points indicating original data and smoothed LOESS lines representing predictions. Each day of the week is distinguished by a unique colored line.
+
+```{r}
+ggplot() +
+  geom_point(data = hourly_summary, aes(x = Hour, y = AvgTotalCalls), alpha = 0.3, shape = 16) +
+  geom_smooth(method="loess",se=FALSE, data = avg_predicted_calls_lm, aes(x = Hour, y = AvgPredictedTotalCalls),color='blue') +
+  scale_color_manual(values = cb_palette) +
+  labs(title = "Predicted vs. Original Average Total Calls by Hour and Hour for Each Month (Linear Model)",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+  facet_wrap(~Month)+
+  theme(plot.title = element_text(size = 12),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10),
+          strip.text = element_text(size = 10))+
+  theme(legend.position = "bottom")
+```
+
+The graph visually represents the connection between the blue line, derived from LOESS smoothing applied to model-predicted points, and the black scatter points representing actual data. It provides valuable insights into the fluctuation of average total calls throughout various months and assesses the model's capacity to capture these fluctuations.
+
+```{r}
+ggplot() +
+  geom_point(data = hourly_summary, aes(x = Hour, y = AvgTotalCalls, color = Day), alpha = 0.3, shape = 16) +
+  geom_line(data = avg_predicted_calls_lm, aes(x = Hour, y = AvgPredictedTotalCalls, color = as.factor(Day))) +
+  facet_wrap(~Month, ncol = 3) +
+  scale_color_manual(values = cb_palette) +
+  labs(title = "Predicted vs. Original Average Total Calls by Hour and Day for Each Month (Linear Model)",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+    theme(plot.title = element_text(size = 12),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10),
+          strip.text = element_text(size = 10))+
+  theme(legend.position = "bottom")
+
+```
+
+The graph represents the predicted average of total calls, over the original average total calls faceted by each month. And the color represents the Day of the week.
+
+#Gam Model
+
+```{r}
+# Base model
+# Base model with Day and Month as factors
+gam_model_1 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month), data = hourly_calls, method="REML")
+summary(gam_model_1)
+
+```
+```{r}
+AIC(gam_model_1)
+BIC(gam_model_1)
+```
+# Adding interaction between Hour and Day
+```{r}
+
+gam_model_2 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month) + s(Hour, by=Day), data = hourly_calls, method="REML")
+summary(gam_model_2)
+
+
+```
+
+```{r}
+AIC(gam_model_2)
+BIC(gam_model_2)
+```
+
+# Adding interaction between Hour and Day
+```{r}
+
+# Add interaction between Hour and Month
+gam_model_3 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month) + s(Hour, by=Day) + s(Hour, by=Month), data = hourly_calls, method="REML")
+summary(gam_model_3)
+
+
+```
+
+```{r}
+AIC(gam_model_3)
+BIC(gam_model_3)
+```
+
+# Add interaction between Day and Month
+
+```{r}
+gam_model_4 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month) + s(Hour, by=Day) + s(Hour, by=Month) + factor(Day:Month), data = hourly_calls, method="REML")
+summary(gam_model_4)
+
+
+```
+
+```{r}
+AIC(gam_model_4)
+BIC(gam_model_4)
+```
+
+```{r}
+gam_model_1 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month), data = hourly_calls, method="REML")
+gam_model_2 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month) + s(Hour, by=Day), data = hourly_calls, method="REML")
+gam_model_3 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month) + s(Hour, by=Day) + s(Hour, by=Month), data = hourly_calls, method="REML")
+gam_model_4 <- gam(log_TotalCalls ~ s(Hour) + factor(Day) + factor(Month) + s(Hour, by=Day) + s(Hour, by=Month) + factor(Day:Month), data = hourly_calls, method="REML")
+```
+
+
+```{r}
+AIC(gam_model_1)
+BIC(gam_model_1)
+AIC(gam_model_2)
+BIC(gam_model_2)
+AIC(gam_model_3)
+BIC(gam_model_3)
+AIC(gam_model_4)
+BIC(gam_model_4)
+```
+
+
+# Model 2 performs better less BIC
+
+
+```{r}
+library(broom)
+gam_model_2.df<-augment(gam_model_2)
+```
+
+```{r}
+ggplot(gam_model_2.df, aes(x=Hour,y=.resid))+
+  geom_point()+geom_smooth()
+
+ggplot(gam_model_2.df, aes(x=Day,y=.resid))+
+  geom_point()+geom_smooth(method="gam")
+
+ggplot(gam_model_2.df, aes(x=.fitted,y=abs(.resid)))+
+  geom_point()+geom_smooth()
+
+```
+
+```{r}
+# Create a new data frame for predictions
+prediction_grid <- expand.grid(
+  Hour = unique(hourly_calls$Hour),
+  Day = unique(hourly_calls$Day),
+  Month = unique(hourly_calls$Month)
+)
+
+```
+
+```{r}
+gam_predictions <- predict(gam_model_2, newdata = prediction_grid, type = "response")
+
+```
+
+```{r}
+# Combine the predictions with the prediction grid
+predictions_df <- data.frame(prediction_grid, PredictedLogCalls = as.vector(gam_predictions))
+
+```
+
+
+```{r}
+# Plot the predictions
+ggplot(predictions_df, aes(x = Hour, y = PredictedLogCalls)) +
+  geom_line(aes(color = factor(Day))) +  # Assuming you want different colors for each day
+  facet_wrap(~Month) +  # Facet by month
+  labs(y = "Predicted Log of Total Calls", x = "Hour of Day", color = "Day") +
+  theme_minimal() +
+  scale_color_viridis_d()  # Use a discrete color scale if 'Day' is a categorical variable
+
+```
+```{r}
+plotting_df <- merge(hourly_calls, predictions_df, by = c("Hour", "Day", "Month"), all.x = TRUE)
+
+# Create the plot
+ggplot(plotting_df, aes(x = Hour)) +
+  geom_point(aes(y = log_TotalCalls, color = Day), alpha = 0.5) +  # Actual data points
+  geom_line(aes(y = PredictedLogCalls, color = Day, group = Day), size = 1) +  # Predicted values
+  facet_wrap(~Month, scales = "free_y") +  # Facet by month with separate y scales if needed
+  labs(y = "Log of Total Calls", x = "Hour of Day", title = "Actual vs. Predicted Log of Total Calls") +
+  theme_minimal() +
+  scale_color_viridis_d()  # Use a discrete color scale for 'Day'
+```
+#During our analysis of 911 emergency calls, we initially attempted to visualize the total call data but found the plots too complex and difficult to interpret. To clarify our findings, we calculated and plotted the averages of total and predicted calls, resulting in a more accessible and interpretable representation of the data trends.
+
+```{r}
+library(mgcv)
+library(ggplot2)
+```
+
+
+```{r}
+# Predicting values using the GAM model
+hourly_summary_predicted_gam <- hourly_summary %>%
+  mutate(PredictedTotalCalls = exp(predict(gam_model_2, newdata = .)))
+
+# Calculate average of predicted calls
+avg_predicted_calls_gam <- hourly_summary_predicted %>%
+  group_by(Month, Day, Hour) %>%
+  summarize(AvgPredictedTotalCalls = mean(PredictedTotalCalls), .groups = 'drop')
+
+hourly_summary_gam <- hourly_calls %>%
+  group_by(Month, Day, Hour) %>%
+  summarize(AvgTotalCalls = mean(TotalCalls), .groups = 'drop')
+```
+
+
+```{r}
+ggplot() +
+  geom_point(data = hourly_summary_gam, aes(x = Hour, y = AvgTotalCalls), alpha = 0.3, shape = 16) +
+  geom_smooth(method="loess",se=FALSE, data = avg_predicted_calls_gam, aes(x = Hour, y = AvgPredictedTotalCalls, color=factor(Day))) +
+  scale_color_manual(values = cb_palette) +
+  labs(title = "Predicted vs. Original Average Total Calls by Hour and Day for Each Month (Gam Model)",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12),
+        plot.margin = margin(20,80,20,20),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10),
+          strip.text = element_text(size = 10))+
+  theme(legend.position = "bottom")
+```
+
+
+```{r}
+
+ggplot() +
+  geom_point(data = hourly_summary_gam, aes(x = Hour, y = AvgTotalCalls), alpha = 0.3, shape = 16) +
+  geom_smooth(method="loess",se=FALSE, data = avg_predicted_calls_gam, aes(x = Hour, y = AvgPredictedTotalCalls),color='blue') +
+  scale_color_manual(values = cb_palette) +
+  labs(title = "Predicted vs. Original Average Total Calls by Hour and Hour for Each Month (Gam Model)",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+  facet_wrap(~Month)+
+  theme(plot.title = element_text(size = 12),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10),
+          strip.text = element_text(size = 10))+
+  theme(legend.position = "bottom")
+```
+
+
+
+```{r}
+# Define a color-blind friendly palette
+cb_palette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+# Create the plot with original data points and smoothed lines for predicted values
+ggplot() +
+  geom_point(data = hourly_summary, aes(x = Hour, y = AvgTotalCalls, color = Day), alpha = 0.3, shape = 16) +
+  geom_smooth(data =avg_predicted_calls , aes(x = Hour, y = AvgPredictedTotalCalls, color = as.factor(Day)), method = "gam", se = FALSE) +
+  facet_wrap(~Month, ncol = 3) +
+  scale_color_manual(values = cb_palette) +
+  labs(title = "Predicted vs. Original Average Total Calls by Hour and Day for Each Month",
+       x = "Hour of the Day",
+       y = "Average Total Calls") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 22),
+          axis.title = element_text(size = 16),
+          axis.text = element_text(size = 14),
+          strip.text = element_text(size = 16))+
+  theme(legend.position = "bottom")
+
+```
+
+
+
+#Loess Model
+
+Now let's try Loess. For Loess we have to convert the categorical data into numerical, so let's convert month and day to numerical.
+
+```{r}
+month_mapping <- list(
+  January = 1,
+  February = 2,
+  March = 3,
+  April = 4,
+  May = 5,
+  June = 6,
+  July = 7,
+  August = 8,
+  September = 9,
+  October = 10,
+  November = 11,
+  December = 12
+)
+
+# Function to convert month names to numbers
+convert_month_names_to_numbers <- function(month_name, mapping) {
+  sapply(month_name, function(x) mapping[[x]])
+}
+
+# Apply the function to convert month names to numbers
+hourly_calls$Month_Number <- convert_month_names_to_numbers(hourly_calls$Month, month_mapping)
+
+
+#View(hourly_calls)
+```
+
+```{r}
+# Mapping of day names to numbers
+day_mapping <- list(
+  Monday = 1,
+  Tuesday = 2,
+  Wednesday = 3,
+  Thursday = 4,
+  Friday = 5,
+  Saturday = 6,
+  Sunday = 7
+)
+
+# Function to convert day names to numbers
+convert_day_names_to_numbers <- function(day_name, mapping) {
+  sapply(day_name, function(x) mapping[[x]])
+}
+
+# Apply the function to convert day names to numbers
+hourly_calls$Day_Number <- convert_day_names_to_numbers(hourly_calls$Day, day_mapping)
+
+# Output the modified data frame
+#View(hourly_calls)
+
+```
+
+Tring first model without any interactions
+
+```{r}
+loess_model1 <- loess(log_TotalCalls ~ Month_Number + Day_Number + Hour, data = hourly_calls)
+summary(loess_model1)
+```
+
+```{r}
+model.df <- augment(loess_model1)
+
+ggplot(model.df,aes(x=.fitted,y=.resid))+
+  geom_point()+geom_smooth(color = "#E69F00")+
+  geom_abline(slope = 0,intercept = 0)+
+    labs(title = "Residuals vs Fitted Values for linear Model",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+
+```{r}
+var(model.df$.fitted) / (var(model.df$.resid) + var(model.df$.fitted))
+```
+
+Second loess_model with interaction between the predictors
+
+```{r}
+loess_model2 <- loess(log_TotalCalls ~ Month_Number + Day_Number + Hour + Month_Number*Day_Number*Hour, data = hourly_calls)
+summary(loess_model2)
+```
+
+```{r}
+model.df <- augment(loess_model2)
+
+ggplot(model.df,aes(x=.fitted,y=.resid))+
+  geom_point()+geom_smooth(color = "#E69F00")+
+  geom_abline(slope = 0,intercept = 0)+
+    labs(title = "Residuals vs Fitted Values for linear Model",
+       x = "Fitted Values",
+       y = "Residuals")
+```
+
+```{r}
+var(model.df$.fitted) / (var(model.df$.resid) + var(model.df$.fitted))
+```
+
+
+```{r}
+Month_Number <- seq(1,12,1)
+Day_Number <- seq(1,7,1)
+Hour <- seq(0,23,1)
+fake <- expand.grid( Month_Number = Month_Number, Day_Number = Day_Number, Hour = Hour)
+preds <- predict(loess_model2, newdata = fake)
+fake$LogTotalCalls <- as.vector(preds)
+#View(fake)
+```
+
+
+```{r}
+ggplot(fake, aes(x = Hour , y = LogTotalCalls, color = Day_Number, group=Day_Number)) +
+  geom_jitter(color='black',aes(alpha='0.03')) +
+  geom_smooth(se=FALSE) +
+  
+  labs(title = "Total Calls predicted based on the Hour",
+       x = "Hour of the day",
+       y = "Total calls predicted") + theme_minimal() +
+  scale_fill_viridis_c()
+```
+Graph represents the predicted line across the data scattered showing relationship between total calls predicted by the loess_model and Hour of the day. The line color represents the Day of the week, the darker color represents initial days of the week, and brighter ones represent the last days of the week.
+
+```{r}
+ggplot(fake, aes(x = Hour , y = LogTotalCalls)) +
+  geom_jitter() +
+  geom_smooth() +
+  
+  labs(title = "Total Calls predicted based on the Hour facted by Hour of day",
+       x = "Hour of the day",
+       y = "Total calls predicted") + theme_minimal() +
+  scale_fill_viridis_d() + facet_wrap(~Day_Number)
+```
+Graph representing the prediction by model as blue line over the input data points faceted by the day of the week. We don't see a major difference from previous models, perhaps we should explore more interaction or other ways to convert categorical precitors and use them in Loess model.
