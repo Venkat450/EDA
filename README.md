@@ -79,10 +79,6 @@ Run scripts in the provided order under `scripts/` to reproduce analysis.
 
 ## Contributors
 - **Sree Venkat Chintakula**  
-- Yamini Ane  
-- Yamini Ane  
-- Harsha Ane
-
 ---
 
 ## License
